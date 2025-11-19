@@ -61,3 +61,4 @@ If you still get bot detection errors:
 2. Update yt-dlp: `yt-dlp -U`
 3. Check yt-dlp GitHub for latest fixes: https://github.com/yt-dlp/yt-dlp
 
+

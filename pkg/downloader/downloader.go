@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -192,10 +193,35 @@ func autoInstallBinaries(ytdlpExists, ffmpegExists bool) error {
 		} else {
 			fmt.Fprintln(os.Stderr, "[gostreampuller] ✓ yt-dlp installed successfully")
 			// Update path to the newly installed binary
-			YTDLPPath = tryGetLocalBinary("yt-dlp")
+			newPath := tryGetLocalBinary("yt-dlp")
+			if newPath != "" && newPath != "yt-dlp" {
+				YTDLPPath = newPath
+				fmt.Fprintf(os.Stderr, "[gostreampuller] Using yt-dlp at: %s\n", YTDLPPath)
+			} else {
+				// Verify the binary exists and is executable
+				homeDir, _ := os.UserHomeDir()
+				binDir := filepath.Join(homeDir, ".gostreampuller", "bin")
+				binPath := filepath.Join(binDir, "yt-dlp")
+				if _, err := os.Stat(binPath); err == nil {
+					// Make sure it's executable
+					if runtime.GOOS != "windows" {
+						os.Chmod(binPath, 0755)
+					}
+					YTDLPPath = binPath
+					fmt.Fprintf(os.Stderr, "[gostreampuller] Using yt-dlp at: %s\n", YTDLPPath)
+				}
+			}
 		}
 	} else {
-		// yt-dlp exists, try to update it in background (non-blocking)
+		// yt-dlp exists, verify it's the correct path
+		if YTDLPPath == "yt-dlp" {
+			// Try to find the actual path
+			newPath := tryGetLocalBinary("yt-dlp")
+			if newPath != "" && newPath != "yt-dlp" {
+				YTDLPPath = newPath
+			}
+		}
+		// Try to update it in background (non-blocking)
 		// This helps keep yt-dlp updated to handle YouTube changes
 		go func() {
 			if err := updateYTDLPAuto(); err != nil {
@@ -439,7 +465,7 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 	}
 
 	// Use yt-dlp with --dump-json to get metadata without downloading
-	// Add headers to bypass YouTube bot detection
+	// Add comprehensive headers and options to bypass YouTube bot detection
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"--dump-json",
 		"--no-playlist",
@@ -448,6 +474,16 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 		"--referer", "https://www.youtube.com/",
 		"--add-header", "Accept-Language:en-US,en;q=0.9",
 		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+		"--add-header", "Accept-Encoding:gzip, deflate, br",
+		"--add-header", "Connection:keep-alive",
+		"--add-header", "Upgrade-Insecure-Requests:1",
+		"--add-header", "Sec-Fetch-Dest:document",
+		"--add-header", "Sec-Fetch-Mode:navigate",
+		"--add-header", "Sec-Fetch-Site:none",
+		"--add-header", "Sec-Fetch-User:?1",
+		"--add-header", "DNT:1",
+		"--sleep-interval", "1",
+		"--max-sleep-interval", "3",
 		url,
 	)
 
