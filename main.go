@@ -50,6 +50,27 @@ func main() {
 	// Set Gin to release mode (optional, for production)
 	// gin.SetMode(gin.ReleaseMode)
 
+	// Ensure binaries are installed and try to update yt-dlp on startup
+	// This helps handle YouTube API changes
+	go func() {
+		if err := ensureBinariesInstalled(); err != nil {
+			log.Printf("Warning: Could not ensure binaries are installed: %v", err)
+			return
+		}
+		// Try to update yt-dlp in background (non-blocking)
+		ytdlpPath := findYTDLPPath()
+		if ytdlpPath != "" && ytdlpPath != "yt-dlp" {
+			// Check if it's the local binary
+			if _, err := os.Stat(ytdlpPath); err == nil {
+				// Try to update using yt-dlp's built-in update command
+				cmd := exec.Command(ytdlpPath, "-U")
+				if err := cmd.Run(); err == nil {
+					log.Printf("✓ yt-dlp updated to latest version")
+				}
+			}
+		}
+	}()
+
 	router := gin.Default()
 
 	// CORS middleware
@@ -139,10 +160,56 @@ func getDirectDownloadURL(url string) (string, error) {
 		return "", fmt.Errorf("yt-dlp not found")
 	}
 
-	// Use yt-dlp with -g flag to get direct URL with comprehensive bot detection bypass
-	// -g: Print video URL instead of downloading
-	// -f best: Get best quality format
-	// Add comprehensive headers and options to bypass YouTube bot detection
+	// Try different clients to get the download URL
+	clients := []string{"android", "android_embedded", "android_music", "ios", "tv_embedded", "web"}
+	var lastErr error
+
+	for _, client := range clients {
+		// Use yt-dlp with -g flag to get direct URL with comprehensive bot detection bypass
+		// -g: Print video URL instead of downloading
+		// -f best: Get best quality format
+		cmd := exec.Command(ytdlpPath,
+			"-g",
+			"-f", "best",
+			"--no-playlist",
+			"--no-warnings",
+			"--extractor-args", fmt.Sprintf("youtube:player_client=%s", client),
+			"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			"--referer", "https://www.youtube.com/",
+			"--add-header", "Accept-Language:en-US,en;q=0.9",
+			"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"--add-header", "Accept-Encoding:gzip, deflate, br",
+			"--add-header", "Connection:keep-alive",
+			"--add-header", "Upgrade-Insecure-Requests:1",
+			"--add-header", "Sec-Fetch-Dest:document",
+			"--add-header", "Sec-Fetch-Mode:navigate",
+			"--add-header", "Sec-Fetch-Site:none",
+			"--add-header", "Sec-Fetch-User:?1",
+			"--add-header", "DNT:1",
+			"--sleep-interval", "1",
+			"--max-sleep-interval", "3",
+			"--no-check-certificate",
+			url,
+		)
+
+		output, err := cmd.Output()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				lastErr = fmt.Errorf("yt-dlp error with client %s: %s", client, string(exitErr.Stderr))
+				continue
+			}
+			lastErr = fmt.Errorf("failed to execute yt-dlp: %w", err)
+			continue
+		}
+
+		// yt-dlp may return multiple URLs (video + audio), take the first one
+		urls := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(urls) > 0 && urls[0] != "" {
+			return urls[0], nil
+		}
+	}
+
+	// If all clients failed, try without specifying a client
 	cmd := exec.Command(ytdlpPath,
 		"-g",
 		"-f", "best",
@@ -150,35 +217,22 @@ func getDirectDownloadURL(url string) (string, error) {
 		"--no-warnings",
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		"--referer", "https://www.youtube.com/",
-		"--add-header", "Accept-Language:en-US,en;q=0.9",
-		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		"--add-header", "Accept-Encoding:gzip, deflate, br",
-		"--add-header", "Connection:keep-alive",
-		"--add-header", "Upgrade-Insecure-Requests:1",
-		"--add-header", "Sec-Fetch-Dest:document",
-		"--add-header", "Sec-Fetch-Mode:navigate",
-		"--add-header", "Sec-Fetch-Site:none",
-		"--add-header", "Sec-Fetch-User:?1",
-		"--add-header", "DNT:1",
 		"--sleep-interval", "1",
 		"--max-sleep-interval", "3",
 		url,
 	)
 
 	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("yt-dlp error: %s", string(exitErr.Stderr))
+	if err == nil {
+		urls := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(urls) > 0 && urls[0] != "" {
+			return urls[0], nil
 		}
-		return "", fmt.Errorf("failed to execute yt-dlp: %w", err)
 	}
 
-	// yt-dlp may return multiple URLs (video + audio), take the first one
-	urls := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(urls) > 0 && urls[0] != "" {
-		return urls[0], nil
+	if lastErr != nil {
+		return "", lastErr
 	}
-
 	return "", fmt.Errorf("no download URL found")
 }
 

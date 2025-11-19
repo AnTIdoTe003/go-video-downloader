@@ -464,8 +464,25 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 		return nil, fmt.Errorf("failed to ensure binaries are installed: %w", err)
 	}
 
+	// Try to update yt-dlp first (non-blocking, but helps with YouTube changes)
+	// This runs in background and won't block if it fails
+	go func() {
+		if err := updateYTDLPAuto(); err != nil {
+			// Silently fail - we'll try with existing version
+			_ = err
+		}
+	}()
+
 	// Try different approaches to get metadata, starting with the most reliable
-	clients := []string{"android_music", "ios", "web"}
+	// Expanded client list to handle more video types
+	clients := []string{
+		"android",           // Android app (most reliable)
+		"android_embedded",  // Android embedded player
+		"android_music",     // Android Music app
+		"ios",               // iOS app
+		"tv_embedded",       // TV embedded player
+		"web",               // Web browser (fallback)
+	}
 	var lastErr error
 
 	for _, client := range clients {
@@ -496,17 +513,30 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 			"--add-header", "DNT:1",
 			"--sleep-interval", "1",
 			"--max-sleep-interval", "3",
+			"--no-check-certificate", // Sometimes helps with network issues
 			url,
 		)
 
 		output, err := cmd.Output()
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
-				lastErr = fmt.Errorf("failed to fetch metadata with client %s: %s", client, string(exitErr.Stderr))
+				errMsg := string(exitErr.Stderr)
+				// Check if it's a player response error - might need update
+				if strings.Contains(errMsg, "Failed to extract any player response") {
+					lastErr = fmt.Errorf("failed to fetch metadata with client %s: %s (yt-dlp may need update)", client, errMsg)
+				} else {
+					lastErr = fmt.Errorf("failed to fetch metadata with client %s: %s", client, errMsg)
+				}
 				// Continue to next client if this one failed
 				continue
 			}
 			return nil, fmt.Errorf("failed to execute yt-dlp: %w", err)
+		}
+
+		// Check if output is empty
+		if len(output) == 0 {
+			lastErr = fmt.Errorf("empty response from yt-dlp with client %s", client)
+			continue
 		}
 
 		// Parse JSON output
@@ -532,6 +562,36 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 	}
 
 	// If we get here, all clients failed
+	// Try one more time without specifying a client (let yt-dlp choose)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		cmd := exec.CommandContext(ctx, YTDLPPath,
+			"--dump-json",
+			"--no-playlist",
+			"--no-warnings",
+			"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			"--referer", "https://www.youtube.com/",
+			"--sleep-interval", "1",
+			"--max-sleep-interval", "3",
+			url,
+		)
+
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			var rawMetadata map[string]interface{}
+			if err := json.Unmarshal(output, &rawMetadata); err == nil {
+				metadata := &VideoMetadata{
+					Raw: rawMetadata,
+				}
+				if err := json.Unmarshal(output, metadata); err == nil {
+					return metadata, nil
+				}
+			}
+		}
+	}
+
 	if lastErr != nil {
 		return nil, lastErr
 	}

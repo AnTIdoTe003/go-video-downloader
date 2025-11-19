@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -126,6 +127,34 @@ func UpdateYTDLP(progressFn func(string)) error {
 	if progressFn != nil {
 		progressFn("Updating yt-dlp to latest version...")
 	}
+
+	binDir, err := GetBinariesDir()
+	if err != nil {
+		return err
+	}
+
+	var executable string
+	if runtime.GOOS == "windows" {
+		executable = "yt-dlp.exe"
+	} else {
+		executable = "yt-dlp"
+	}
+
+	ytdlpPath := filepath.Join(binDir, executable)
+
+	// If yt-dlp exists, try to update it using yt-dlp's built-in update command
+	if _, err := os.Stat(ytdlpPath); err == nil {
+		// Try using yt-dlp's built-in update command first (faster)
+		cmd := exec.Command(ytdlpPath, "-U")
+		if err := cmd.Run(); err == nil {
+			if progressFn != nil {
+				progressFn("✓ yt-dlp updated successfully")
+			}
+			return nil
+		}
+		// If update command fails, fall back to reinstall
+	}
+
 	// Reinstall to get latest version
 	return InstallYTDLP(progressFn)
 }
