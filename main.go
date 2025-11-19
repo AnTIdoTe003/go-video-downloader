@@ -142,7 +142,15 @@ func getDirectDownloadURL(url string) (string, error) {
 	// Use yt-dlp with -g flag to get direct URL
 	// -g: Print video URL instead of downloading
 	// -f best: Get best quality format
-	cmd := exec.Command(ytdlpPath, "-g", "-f", "best", url)
+	// Add headers to bypass YouTube bot detection
+	cmd := exec.Command(ytdlpPath,
+		"-g",
+		"-f", "best",
+		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"--referer", "https://www.youtube.com/",
+		"--add-header", "Accept-Language:en-US,en;q=0.9",
+		url,
+	)
 
 	output, err := cmd.Output()
 	if err != nil {

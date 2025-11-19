@@ -417,10 +417,15 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 	}
 
 	// Use yt-dlp with --dump-json to get metadata without downloading
+	// Add headers to bypass YouTube bot detection
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"--dump-json",
 		"--no-playlist",
 		"--no-warnings",
+		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"--referer", "https://www.youtube.com/",
+		"--add-header", "Accept-Language:en-US,en;q=0.9",
+		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		url,
 	)
 
@@ -625,6 +630,7 @@ func DownloadVideoToDirWithProgress(url string, format string, resolution string
 	selector := fmt.Sprintf("bestvideo[height<=%s][vcodec*=%s]+bestaudio/best", resolution, codec)
 
 	// Use yt-dlp with options optimized for large files
+	// Add headers to bypass YouTube bot detection
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"-f", selector,
 		"-o", temp,
@@ -633,6 +639,10 @@ func DownloadVideoToDirWithProgress(url string, format string, resolution string
 		"--buffer-size", "32K",          // Set buffer size
 		"--retries", "10",               // Retry on failure
 		"--fragment-retries", "10",      // Retry fragments
+		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"--referer", "https://www.youtube.com/",
+		"--add-header", "Accept-Language:en-US,en;q=0.9",
+		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		url,
 	)
 
@@ -757,6 +767,7 @@ func DownloadAudioToDirWithProgress(url string, outputFormat string, codec strin
 	}
 
 	// Use yt-dlp with options optimized for large files
+	// Add headers to bypass YouTube bot detection
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"-f", "bestaudio",
 		"-o", temp,
@@ -765,6 +776,10 @@ func DownloadAudioToDirWithProgress(url string, outputFormat string, codec strin
 		"--buffer-size", "32K",          // Set buffer size
 		"--retries", "10",               // Retry on failure
 		"--fragment-retries", "10",      // Retry fragments
+		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"--referer", "https://www.youtube.com/",
+		"--add-header", "Accept-Language:en-US,en;q=0.9",
+		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		url,
 	)
 
