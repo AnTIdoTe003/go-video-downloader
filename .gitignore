@@ -1,0 +1,11 @@
+temp_downloads/
+downloads/
+*.mp4
+*.webm
+*.mkv
+*.mp3
+*.m4a
+*.exe
+.DS_Store
+go.sum
+
