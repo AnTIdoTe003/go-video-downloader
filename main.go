@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/debargha2001/gostreampuller/downloader"
+	"youtube-api-server/pkg/downloader"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )

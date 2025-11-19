@@ -3,7 +3,7 @@ module youtube-api-server
 go 1.24.1
 
 require (
-	github.com/debargha2001/gostreampuller v0.0.0-00010101000000-000000000000
+	github.com/debargha2001/gostreampuller v1.1.0
 	github.com/gin-contrib/cors v1.5.0
 	github.com/gin-gonic/gin v1.9.1
 )
@@ -37,4 +37,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/debargha2001/gostreampuller => ../
+// No replace directive needed - using local packages in pkg/

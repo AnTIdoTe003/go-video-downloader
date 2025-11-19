@@ -7,5 +7,7 @@ downloads/
 *.m4a
 *.exe
 .DS_Store
+main
 # Note: go.sum should be committed for deployment
+# pkg/ directory should be committed (contains required packages)
 
