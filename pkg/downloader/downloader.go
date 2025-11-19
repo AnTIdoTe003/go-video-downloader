@@ -18,9 +18,9 @@ import (
 
 // Auto-installation state
 var (
-	installAttempted  bool
-	installMutex      sync.Mutex
-	autoInstallOnce   sync.Once
+	installAttempted bool
+	installMutex     sync.Mutex
+	autoInstallOnce  sync.Once
 )
 
 // tryGetLocalBinary attempts to find a locally installed binary
@@ -194,6 +194,15 @@ func autoInstallBinaries(ytdlpExists, ffmpegExists bool) error {
 			// Update path to the newly installed binary
 			YTDLPPath = tryGetLocalBinary("yt-dlp")
 		}
+	} else {
+		// yt-dlp exists, try to update it in background (non-blocking)
+		// This helps keep yt-dlp updated to handle YouTube changes
+		go func() {
+			if err := updateYTDLPAuto(); err != nil {
+				// Silently fail - we have a working version
+				_ = err
+			}
+		}()
 	}
 
 	if !ffmpegExists {
@@ -209,7 +218,7 @@ func autoInstallBinaries(ytdlpExists, ffmpegExists bool) error {
 		}
 	}
 
-	if (!ytdlpExists || !ffmpegExists) {
+	if !ytdlpExists || !ffmpegExists {
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "[gostreampuller] ✓ Setup complete! Subsequent calls will be fast.")
 		fmt.Fprintln(os.Stderr, "")
@@ -258,6 +267,16 @@ func installFFMPEGAuto() error {
 	return installer.InstallFFMPEG(progressFn)
 }
 
+// updateYTDLPAuto updates yt-dlp automatically (non-blocking, called in background)
+func updateYTDLPAuto() error {
+	progressFn := func(msg string) {
+		if os.Getenv("GOSTREAMPULLER_VERBOSE") == "1" {
+			fmt.Fprintf(os.Stderr, "[gostreampuller]   %s\n", msg)
+		}
+	}
+
+	return installer.UpdateYTDLP(progressFn)
+}
 
 var (
 	// YTDLPPath is the path to yt-dlp binary
@@ -284,8 +303,9 @@ var (
 // Use this if you want to use a specific yt-dlp installation.
 //
 // Example:
-//   downloader.SetYTDLPPath("/usr/local/bin/yt-dlp")
-//   downloader.SetYTDLPPath("C:\\tools\\yt-dlp.exe")  // Windows
+//
+//	downloader.SetYTDLPPath("/usr/local/bin/yt-dlp")
+//	downloader.SetYTDLPPath("C:\\tools\\yt-dlp.exe")  // Windows
 func SetYTDLPPath(path string) {
 	YTDLPPath = path
 }
@@ -295,8 +315,9 @@ func SetYTDLPPath(path string) {
 // Use this if you want to use a specific ffmpeg installation.
 //
 // Example:
-//   downloader.SetFFMPEGPath("/usr/local/bin/ffmpeg")
-//   downloader.SetFFMPEGPath("C:\\ffmpeg\\bin\\ffmpeg.exe")  // Windows
+//
+//	downloader.SetFFMPEGPath("/usr/local/bin/ffmpeg")
+//	downloader.SetFFMPEGPath("C:\\ffmpeg\\bin\\ffmpeg.exe")  // Windows
 func SetFFMPEGPath(path string) {
 	FFMPEGPath = path
 }
@@ -364,29 +385,29 @@ type VideoMetadata struct {
 	FilesizeApprox int64   `json:"filesize_approx"`
 
 	// URLs
-	URL         string `json:"url"`
-	WebpageURL  string `json:"webpage_url"`
-	Thumbnail   string `json:"thumbnail"`
+	URL        string `json:"url"`
+	WebpageURL string `json:"webpage_url"`
+	Thumbnail  string `json:"thumbnail"`
 
 	// Timestamps
-	UploadDate string `json:"upload_date"`
+	UploadDate  string `json:"upload_date"`
 	ReleaseDate string `json:"release_date"`
-	Timestamp  int64  `json:"timestamp"`
+	Timestamp   int64  `json:"timestamp"`
 
 	// Additional Info
-	Categories  []string               `json:"categories"`
-	Tags        []string               `json:"tags"`
-	IsLive      bool                   `json:"is_live"`
-	WasLive     bool                   `json:"was_live"`
-	LiveStatus  string                 `json:"live_status"`
-	Channel     string                 `json:"channel"`
-	ChannelID   string                 `json:"channel_id"`
-	ChannelURL  string                 `json:"channel_url"`
-	Subtitles   map[string]interface{} `json:"subtitles"`
+	Categories []string               `json:"categories"`
+	Tags       []string               `json:"tags"`
+	IsLive     bool                   `json:"is_live"`
+	WasLive    bool                   `json:"was_live"`
+	LiveStatus string                 `json:"live_status"`
+	Channel    string                 `json:"channel"`
+	ChannelID  string                 `json:"channel_id"`
+	ChannelURL string                 `json:"channel_url"`
+	Subtitles  map[string]interface{} `json:"subtitles"`
 
 	// Platform Specific
-	Extractor    string                 `json:"extractor"`
-	ExtractorKey string                 `json:"extractor_key"`
+	Extractor    string `json:"extractor"`
+	ExtractorKey string `json:"extractor_key"`
 
 	// Raw metadata for additional fields
 	Raw map[string]interface{} `json:"-"`
@@ -396,12 +417,13 @@ type VideoMetadata struct {
 // Returns detailed information about the video including title, duration, formats, quality, etc.
 //
 // Example:
-//   metadata, err := downloader.GetVideoMetadata("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-//   if err != nil {
-//       log.Fatal(err)
-//   }
-//   fmt.Printf("Title: %s\nDuration: %s\nViews: %d\n",
-//       metadata.Title, metadata.DurationString, metadata.ViewCount)
+//
+//	metadata, err := downloader.GetVideoMetadata("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Title: %s\nDuration: %s\nViews: %d\n",
+//	    metadata.Title, metadata.DurationString, metadata.ViewCount)
 func GetVideoMetadata(url string) (*VideoMetadata, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -634,11 +656,11 @@ func DownloadVideoToDirWithProgress(url string, format string, resolution string
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"-f", selector,
 		"-o", temp,
-		"--no-part",                    // Don't use .part files for large downloads
-		"--concurrent-fragments", "3",   // Download fragments concurrently
-		"--buffer-size", "32K",          // Set buffer size
-		"--retries", "10",               // Retry on failure
-		"--fragment-retries", "10",      // Retry fragments
+		"--no-part",                   // Don't use .part files for large downloads
+		"--concurrent-fragments", "3", // Download fragments concurrently
+		"--buffer-size", "32K", // Set buffer size
+		"--retries", "10", // Retry on failure
+		"--fragment-retries", "10", // Retry fragments
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		"--referer", "https://www.youtube.com/",
 		"--add-header", "Accept-Language:en-US,en;q=0.9",
@@ -684,7 +706,7 @@ func DownloadVideoToDirWithProgress(url string, format string, resolution string
 		ffmpeg := exec.CommandContext(convertCtx, FFMPEGPath,
 			"-i", downloaded,
 			"-c", "copy",
-			"-movflags", "+faststart",     // Optimize for streaming
+			"-movflags", "+faststart", // Optimize for streaming
 			"-max_muxing_queue_size", "1024", // Handle large files
 			"-y",
 			finalOutput,
@@ -771,11 +793,11 @@ func DownloadAudioToDirWithProgress(url string, outputFormat string, codec strin
 	cmd := exec.CommandContext(ctx, YTDLPPath,
 		"-f", "bestaudio",
 		"-o", temp,
-		"--no-part",                    // Don't use .part files
-		"--concurrent-fragments", "3",   // Download fragments concurrently
-		"--buffer-size", "32K",          // Set buffer size
-		"--retries", "10",               // Retry on failure
-		"--fragment-retries", "10",      // Retry fragments
+		"--no-part",                   // Don't use .part files
+		"--concurrent-fragments", "3", // Download fragments concurrently
+		"--buffer-size", "32K", // Set buffer size
+		"--retries", "10", // Retry on failure
+		"--fragment-retries", "10", // Retry fragments
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		"--referer", "https://www.youtube.com/",
 		"--add-header", "Accept-Language:en-US,en;q=0.9",

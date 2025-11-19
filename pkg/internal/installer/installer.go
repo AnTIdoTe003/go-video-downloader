@@ -24,12 +24,12 @@ func GetBinariesDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	
+
 	binDir := filepath.Join(homeDir, ".gostreampuller", "bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create bin directory: %w", err)
 	}
-	
+
 	return binDir, nil
 }
 
@@ -39,17 +39,17 @@ func GetYTDLPPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	executable := "yt-dlp"
 	if runtime.GOOS == "windows" {
 		executable = "yt-dlp.exe"
 	}
-	
+
 	path := filepath.Join(binDir, executable)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	
+
 	return "", fmt.Errorf("yt-dlp not found at %s", path)
 }
 
@@ -59,17 +59,17 @@ func GetFFMPEGPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	executable := "ffmpeg"
 	if runtime.GOOS == "windows" {
 		executable = "ffmpeg.exe"
 	}
-	
+
 	path := filepath.Join(binDir, executable)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	
+
 	return "", fmt.Errorf("ffmpeg not found at %s", path)
 }
 
@@ -79,10 +79,10 @@ func InstallYTDLP(progressFn func(string)) error {
 	if err != nil {
 		return err
 	}
-	
+
 	var downloadURL string
 	var executable string
-	
+
 	switch runtime.GOOS {
 	case "linux":
 		downloadURL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
@@ -96,29 +96,38 @@ func InstallYTDLP(progressFn func(string)) error {
 	default:
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
-	
+
 	destPath := filepath.Join(binDir, executable)
-	
+
 	if progressFn != nil {
 		progressFn(fmt.Sprintf("Downloading yt-dlp from %s...", downloadURL))
 	}
-	
+
 	if err := downloadFile(downloadURL, destPath, progressFn); err != nil {
 		return fmt.Errorf("failed to download yt-dlp: %w", err)
 	}
-	
+
 	// Make executable on Unix systems
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(destPath, 0755); err != nil {
 			return fmt.Errorf("failed to make yt-dlp executable: %w", err)
 		}
 	}
-	
+
 	if progressFn != nil {
 		progressFn(fmt.Sprintf("✓ yt-dlp installed at: %s", destPath))
 	}
-	
+
 	return nil
+}
+
+// UpdateYTDLP updates yt-dlp to the latest version
+func UpdateYTDLP(progressFn func(string)) error {
+	if progressFn != nil {
+		progressFn("Updating yt-dlp to latest version...")
+	}
+	// Reinstall to get latest version
+	return InstallYTDLP(progressFn)
 }
 
 // InstallFFMPEG downloads and installs ffmpeg
@@ -127,11 +136,11 @@ func InstallFFMPEG(progressFn func(string)) error {
 	if err != nil {
 		return err
 	}
-	
+
 	var downloadURL string
 	var needsExtraction bool
 	var archiveType string // "zip" or "tar.gz"
-	
+
 	switch runtime.GOOS {
 	case "linux":
 		// Use static build from johnvansickle
@@ -154,11 +163,11 @@ func InstallFFMPEG(progressFn func(string)) error {
 	default:
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
-	
+
 	if progressFn != nil {
 		progressFn(fmt.Sprintf("Downloading ffmpeg from %s...", downloadURL))
 	}
-	
+
 	if needsExtraction {
 		// Download to temp file
 		tmpFile := filepath.Join(os.TempDir(), "ffmpeg-download")
@@ -166,11 +175,11 @@ func InstallFFMPEG(progressFn func(string)) error {
 			return fmt.Errorf("failed to download ffmpeg: %w", err)
 		}
 		defer os.Remove(tmpFile)
-		
+
 		if progressFn != nil {
 			progressFn("Extracting ffmpeg...")
 		}
-		
+
 		// Extract based on archive type
 		if archiveType == "zip" {
 			if err := extractFFMPEGFromZip(tmpFile, binDir, progressFn); err != nil {
@@ -187,33 +196,33 @@ func InstallFFMPEG(progressFn func(string)) error {
 			executable = "ffmpeg.exe"
 		}
 		destPath := filepath.Join(binDir, executable)
-		
+
 		if err := downloadFile(downloadURL, destPath, progressFn); err != nil {
 			return fmt.Errorf("failed to download ffmpeg: %w", err)
 		}
-		
+
 		if runtime.GOOS != "windows" {
 			if err := os.Chmod(destPath, 0755); err != nil {
 				return fmt.Errorf("failed to make ffmpeg executable: %w", err)
 			}
 		}
 	}
-	
+
 	// Verify installation
 	executable := "ffmpeg"
 	if runtime.GOOS == "windows" {
 		executable = "ffmpeg.exe"
 	}
 	destPath := filepath.Join(binDir, executable)
-	
+
 	if _, err := os.Stat(destPath); err != nil {
 		return fmt.Errorf("ffmpeg installation verification failed: %w", err)
 	}
-	
+
 	if progressFn != nil {
 		progressFn(fmt.Sprintf("✓ ffmpeg installed at: %s", destPath))
 	}
-	
+
 	return nil
 }
 
@@ -224,22 +233,22 @@ func downloadFile(url, filepath string, progressFn func(string)) error {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
-	
+
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
-	
+
 	// Download with progress
 	buf := make([]byte, 32*1024)
 	var downloaded int64
 	total := resp.ContentLength
-	
+
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
@@ -247,10 +256,10 @@ func downloadFile(url, filepath string, progressFn func(string)) error {
 				return writeErr
 			}
 			downloaded += int64(n)
-			
+
 			if progressFn != nil && total > 0 {
 				percentage := float64(downloaded) / float64(total) * 100
-				progressFn(fmt.Sprintf("Downloading... %.1f%% (%d/%d MB)", 
+				progressFn(fmt.Sprintf("Downloading... %.1f%% (%d/%d MB)",
 					percentage, downloaded/(1024*1024), total/(1024*1024)))
 			}
 		}
@@ -261,7 +270,7 @@ func downloadFile(url, filepath string, progressFn func(string)) error {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -272,12 +281,12 @@ func extractFFMPEGFromZip(zipPath, destDir string, progressFn func(string)) erro
 		return err
 	}
 	defer r.Close()
-	
+
 	executable := "ffmpeg"
 	if runtime.GOOS == "windows" {
 		executable = "ffmpeg.exe"
 	}
-	
+
 	// Find and extract ffmpeg binary
 	for _, f := range r.File {
 		// Look for ffmpeg binary in the archive
@@ -287,28 +296,28 @@ func extractFFMPEGFromZip(zipPath, destDir string, progressFn func(string)) erro
 				return err
 			}
 			defer rc.Close()
-			
+
 			destPath := filepath.Join(destDir, executable)
 			outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 			if err != nil {
 				return err
 			}
 			defer outFile.Close()
-			
+
 			if _, err := io.Copy(outFile, rc); err != nil {
 				return err
 			}
-			
+
 			if runtime.GOOS != "windows" {
 				if err := os.Chmod(destPath, 0755); err != nil {
 					return err
 				}
 			}
-			
+
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("ffmpeg binary not found in archive")
 }
 
@@ -319,7 +328,7 @@ func extractFFMPEGFromTar(tarPath, destDir string, progressFn func(string)) erro
 		return err
 	}
 	defer file.Close()
-	
+
 	// Handle gzip compression
 	var reader io.Reader = file
 	if strings.HasSuffix(tarPath, ".gz") {
@@ -332,12 +341,12 @@ func extractFFMPEGFromTar(tarPath, destDir string, progressFn func(string)) erro
 	}
 	// Note: tar.xz would need xz decompression library
 	// For production, consider using exec to call tar command
-	
+
 	tr := tar.NewReader(reader)
-	
+
 	executable := "ffmpeg"
 	destPath := filepath.Join(destDir, executable)
-	
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -346,30 +355,30 @@ func extractFFMPEGFromTar(tarPath, destDir string, progressFn func(string)) erro
 		if err != nil {
 			return err
 		}
-		
+
 		// Look for ffmpeg binary
-		if strings.Contains(header.Name, "ffmpeg") && 
-		   !strings.Contains(header.Name, "doc") && 
+		if strings.Contains(header.Name, "ffmpeg") &&
+		   !strings.Contains(header.Name, "doc") &&
 		   header.Typeflag == tar.TypeReg {
-			
+
 			outFile, err := os.Create(destPath)
 			if err != nil {
 				return err
 			}
 			defer outFile.Close()
-			
+
 			if _, err := io.Copy(outFile, tr); err != nil {
 				return err
 			}
-			
+
 			if err := os.Chmod(destPath, 0755); err != nil {
 				return err
 			}
-			
+
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("ffmpeg binary not found in archive")
 }
 
@@ -377,9 +386,9 @@ func extractFFMPEGFromTar(tarPath, destDir string, progressFn func(string)) erro
 func CheckInstallation() (ytdlpInstalled, ffmpegInstalled bool, err error) {
 	ytdlpPath, ytdlpErr := GetYTDLPPath()
 	ffmpegPath, ffmpegErr := GetFFMPEGPath()
-	
+
 	ytdlpInstalled = ytdlpErr == nil && ytdlpPath != ""
 	ffmpegInstalled = ffmpegErr == nil && ffmpegPath != ""
-	
+
 	return ytdlpInstalled, ffmpegInstalled, nil
 }
