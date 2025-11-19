@@ -464,54 +464,78 @@ func GetVideoMetadataWithContext(ctx context.Context, url string) (*VideoMetadat
 		return nil, fmt.Errorf("failed to ensure binaries are installed: %w", err)
 	}
 
-	// Use yt-dlp with --dump-json to get metadata without downloading
-	// Add comprehensive headers and options to bypass YouTube bot detection
-	cmd := exec.CommandContext(ctx, YTDLPPath,
-		"--dump-json",
-		"--no-playlist",
-		"--no-warnings",
-		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"--referer", "https://www.youtube.com/",
-		"--add-header", "Accept-Language:en-US,en;q=0.9",
-		"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		"--add-header", "Accept-Encoding:gzip, deflate, br",
-		"--add-header", "Connection:keep-alive",
-		"--add-header", "Upgrade-Insecure-Requests:1",
-		"--add-header", "Sec-Fetch-Dest:document",
-		"--add-header", "Sec-Fetch-Mode:navigate",
-		"--add-header", "Sec-Fetch-Site:none",
-		"--add-header", "Sec-Fetch-User:?1",
-		"--add-header", "DNT:1",
-		"--sleep-interval", "1",
-		"--max-sleep-interval", "3",
-		url,
-	)
+	// Try different approaches to get metadata, starting with the most reliable
+	clients := []string{"android_music", "ios", "web"}
+	var lastErr error
 
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to fetch metadata: %s", string(exitErr.Stderr))
+	for _, client := range clients {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
 		}
-		return nil, fmt.Errorf("failed to execute yt-dlp: %w", err)
+
+		// Use yt-dlp with --dump-json to get metadata without downloading
+		// Add comprehensive headers and options to bypass YouTube bot detection
+		cmd := exec.CommandContext(ctx, YTDLPPath,
+			"--dump-json",
+			"--no-playlist",
+			"--no-warnings",
+			"--extractor-args", fmt.Sprintf("youtube:player_client=%s", client),
+			"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			"--referer", "https://www.youtube.com/",
+			"--add-header", "Accept-Language:en-US,en;q=0.9",
+			"--add-header", "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"--add-header", "Accept-Encoding:gzip, deflate, br",
+			"--add-header", "Connection:keep-alive",
+			"--add-header", "Upgrade-Insecure-Requests:1",
+			"--add-header", "Sec-Fetch-Dest:document",
+			"--add-header", "Sec-Fetch-Mode:navigate",
+			"--add-header", "Sec-Fetch-Site:none",
+			"--add-header", "Sec-Fetch-User:?1",
+			"--add-header", "DNT:1",
+			"--sleep-interval", "1",
+			"--max-sleep-interval", "3",
+			url,
+		)
+
+		output, err := cmd.Output()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				lastErr = fmt.Errorf("failed to fetch metadata with client %s: %s", client, string(exitErr.Stderr))
+				// Continue to next client if this one failed
+				continue
+			}
+			return nil, fmt.Errorf("failed to execute yt-dlp: %w", err)
+		}
+
+		// Parse JSON output
+		var rawMetadata map[string]interface{}
+		if err := json.Unmarshal(output, &rawMetadata); err != nil {
+			lastErr = fmt.Errorf("failed to parse metadata JSON with client %s: %w", client, err)
+			continue
+		}
+
+		// Create VideoMetadata struct
+		metadata := &VideoMetadata{
+			Raw: rawMetadata,
+		}
+
+		// Marshal and unmarshal to populate struct fields
+		if err := json.Unmarshal(output, metadata); err != nil {
+			lastErr = fmt.Errorf("failed to map metadata with client %s: %w", client, err)
+			continue
+		}
+
+		// Success! Return the metadata
+		return metadata, nil
 	}
 
-	// Parse JSON output
-	var rawMetadata map[string]interface{}
-	if err := json.Unmarshal(output, &rawMetadata); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata JSON: %w", err)
+	// If we get here, all clients failed
+	if lastErr != nil {
+		return nil, lastErr
 	}
-
-	// Create VideoMetadata struct
-	metadata := &VideoMetadata{
-		Raw: rawMetadata,
-	}
-
-	// Marshal and unmarshal to populate struct fields
-	if err := json.Unmarshal(output, metadata); err != nil {
-		return nil, fmt.Errorf("failed to map metadata: %w", err)
-	}
-
-	return metadata, nil
+	return nil, fmt.Errorf("failed to fetch metadata: all extraction methods failed")
 }
 
 // streamCommand executes a command and streams its output to handle large files

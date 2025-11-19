@@ -56,3 +56,4 @@ go mod download && go build -o main
 The auto-update will happen in the background when the app starts.
 
 
+
